@@ -1,0 +1,10 @@
+# Block datasets
+*.csv
+data/
+
+# Block ML models
+*.pkl
+
+# Python cache
+__pycache__/
+*.pyc
