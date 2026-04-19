@@ -1,224 +1,195 @@
 # =====================================================
-# 🌊 FLOOD AI DASHBOARD (FINAL THESIS VERSION)
+# 🌐 CLOUD-BASED FLOOD RESPONSE DASHBOARD (FINAL FIXED)
 # =====================================================
 
 import streamlit as st
-import pandas as pd
 import numpy as np
+import pandas as pd
 import joblib
-import matplotlib.pyplot as plt
-import seaborn as sns
-import folium
-
-from streamlit_folium import st_folium
-from streamlit_autorefresh import st_autorefresh
-
-from sklearn.metrics import confusion_matrix, roc_curve, auc
-from sklearn.preprocessing import label_binarize
-from sklearn.cluster import KMeans
+import time
+import plotly.graph_objects as go
 
 # =====================================================
 # PAGE CONFIG
 # =====================================================
-st.set_page_config(page_title="Flood AI System", layout="wide")
 
-st.title("🌊 AI-Based Flood Disaster Prediction System")
-st.markdown("Multi-Dataset ML + GIS + Satellite + IoT Simulation")
+st.set_page_config(page_title="Flood System", layout="wide")
 
-# =====================================================
-# AUTO REFRESH (LIVE SYSTEM)
-# =====================================================
-st_autorefresh(interval=5000, key="refresh")
+st.title("🌊 Smart City Flood Disaster Response System")
+st.markdown("Real-Time IoT + ML Based Flood Prediction Dashboard")
 
 # =====================================================
 # LOAD MODEL
 # =====================================================
-try:
-    model = joblib.load("rf_model.pkl")
-    scaler = joblib.load("scaler.pkl")
-    features = joblib.load("features.pkl")
-    st.success("✅ Model Loaded Successfully")
-except:
-    st.error("❌ Model not found. Run main.py first")
-    st.stop()
+
+model = joblib.load("model.pkl")
+scaler = joblib.load("scaler.pkl")
+features = joblib.load("features.pkl")
 
 # =====================================================
-# LOAD DATA (for MAPS)
+# SESSION STATE (CRITICAL FIX)
 # =====================================================
-df = pd.read_csv("data/sri_lanka_flood_risk_dataset_25000.csv")
-df = df.dropna(subset=["latitude", "longitude", "flood_risk_score"])
 
-# =====================================================
-# SIDEBAR INPUT
-# =====================================================
-st.sidebar.header("📊 Input Features")
+if "rain_series" not in st.session_state:
+    st.session_state.rain_series = []
 
-inputs = []
-for f in features:
-    val = st.sidebar.number_input(f, value=5.0)
-    inputs.append(val)
+if "water_series" not in st.session_state:
+    st.session_state.water_series = []
 
-input_data = np.array(inputs).reshape(1, -1)
-input_data = scaler.transform(input_data)
+if "risk_series" not in st.session_state:
+    st.session_state.risk_series = []
 
 # =====================================================
-# PREDICTION
+# SIDEBAR INPUTS
 # =====================================================
-prediction = model.predict(input_data)[0]
 
-st.subheader("📡 Flood Risk Prediction")
+st.sidebar.header("📡 IoT Sensor Controls")
 
-if prediction == 0:
-    st.success("🟢 LOW RISK")
-elif prediction == 1:
-    st.warning("🟡 MEDIUM RISK")
-else:
-    st.error("🔴 HIGH RISK")
+rainfall = st.sidebar.slider("Rainfall", 0.0, 1.0, 0.5)
+water_level = st.sidebar.slider("Water Level", 0.0, 1.0, 0.5)
+drainage = st.sidebar.slider("Drainage Condition", 0.0, 1.0, 0.5)
+population = st.sidebar.slider("Population Density", 0.0, 1.0, 0.5)
 
 # =====================================================
-# TABS
+# PREDICTION FUNCTION
 # =====================================================
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "📊 Accuracy",
-    "📉 Confusion Matrix",
-    "📈 ROC Curve",
-    "🌍 Flood Map",
-    "🛰 Satellite",
-    "📊 Rainfall Trend"
-])
 
-# =====================================================
-# TAB 1 - ACCURACY
-# =====================================================
-with tab1:
-    st.subheader("Model Accuracy Comparison")
+def predict(rainfall, water_level, drainage, population):
 
-    data = pd.DataFrame({
-        "Model": ["Random Forest", "Logistic Regression", "Decision Tree"],
-        "Accuracy": [0.97, 0.83, 0.96]
-    })
+    data = pd.DataFrame([[rainfall, water_level, drainage, population]],
+                        columns=features)
 
-    fig, ax = plt.subplots()
-    sns.barplot(x="Model", y="Accuracy", data=data, ax=ax)
-    ax.set_ylim(0, 1)
-    st.pyplot(fig)
+    scaled = scaler.transform(data)
+
+    pred = model.predict(scaled)[0]
+    prob = model.predict_proba(scaled)[0]
+
+    return pred, prob
 
 # =====================================================
-# TAB 2 - CONFUSION MATRIX
+# MAIN PREDICTION
 # =====================================================
-with tab2:
-    st.subheader("Confusion Matrix (Random Forest)")
 
-    y_true = np.random.randint(0, 3, 300)
-    y_pred = np.random.randint(0, 3, 300)
+pred, prob = predict(rainfall, water_level, drainage, population)
+risk_value = max(prob)
 
-    cm = confusion_matrix(y_true, y_pred)
-    cm_percent = cm.astype("float") / cm.sum(axis=1)[:, np.newaxis]
-
-    annot = np.empty_like(cm).astype(str)
-
-    for i in range(cm.shape[0]):
-        for j in range(cm.shape[1]):
-            annot[i, j] = f"{cm[i,j]}\n({cm_percent[i,j]:.2f})"
-
-    fig, ax = plt.subplots()
-    sns.heatmap(cm_percent, annot=annot, fmt="", cmap="Blues",
-                xticklabels=["Low","Med","High"],
-                yticklabels=["Low","Med","High"], ax=ax)
-
-    st.pyplot(fig)
+labels = ["LOW", "MEDIUM", "HIGH"]
 
 # =====================================================
-# TAB 3 - ROC CURVE
+# DISPLAY RESULT
 # =====================================================
-with tab3:
-    st.subheader("Multiclass ROC Curve")
 
-    y_test = np.random.randint(0, 3, 300)
-    y_score = np.random.rand(300, 3)
+col1, col2 = st.columns(2)
 
-    y_bin = label_binarize(y_test, classes=[0,1,2])
+with col1:
+    st.subheader("🚨 Flood Risk Level")
 
-    fig, ax = plt.subplots()
+    if labels[pred] == "HIGH":
+        st.error("🔴 HIGH RISK")
+    elif labels[pred] == "MEDIUM":
+        st.warning("🟠 MEDIUM RISK")
+    else:
+        st.success("🟢 LOW RISK")
 
-    colors = ["blue","orange","green"]
-    labels = ["Low","Medium","High"]
-
-    for i in range(3):
-        fpr, tpr, _ = roc_curve(y_bin[:, i], y_score[:, i])
-        ax.plot(fpr, tpr, label=labels[i])
-
-    ax.plot([0,1],[0,1],'k--')
-    ax.legend()
-
-    st.pyplot(fig)
+    st.write("Probability:", prob)
 
 # =====================================================
-# TAB 4 - REAL FLOOD MAP
+# GAUGE CHART
 # =====================================================
-with tab4:
-    st.subheader("🌍 Real Flood Risk Map")
 
-    m = folium.Map(location=[df["latitude"].mean(),
-                             df["longitude"].mean()],
-                   zoom_start=7)
+with col2:
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=risk_value * 100,
+        title={'text': "Flood Risk %"},
+        gauge={
+            'axis': {'range': [0, 100]},
+            'bar': {'color': "red"},
+            'steps': [
+                {'range': [0, 40], 'color': "green"},
+                {'range': [40, 70], 'color': "yellow"},
+                {'range': [70, 100], 'color': "red"}
+            ]
+        }
+    ))
 
-    for _, row in df.sample(200).iterrows():
-
-        risk = row["flood_risk_score"]
-
-        color = "green" if risk < 0.4 else "orange" if risk < 0.7 else "red"
-
-        folium.CircleMarker(
-            location=[row["latitude"], row["longitude"]],
-            radius=5,
-            color=color,
-            fill=True,
-            popup=f"Risk: {risk:.2f}"
-        ).add_to(m)
-
-    st_folium(m, width=900, height=500)
+    st.plotly_chart(fig, use_container_width=True)
 
 # =====================================================
-# TAB 5 - SATELLITE SIMULATION
+# LIVE TIME SERIES GRAPHS (FIXED)
 # =====================================================
-with tab5:
-    st.subheader("🛰 Satellite Flood Detection (NDWI Simulation)")
 
-    sat = df.sample(200).copy()
-    sat["ndwi"] = np.random.uniform(-1,1,len(sat))
+st.markdown("## 📊 Live Flood Monitoring System")
 
-    m = folium.Map(location=[sat["latitude"].mean(),
-                             sat["longitude"].mean()],
-                   zoom_start=7)
+# Safe fallback
+rain_series = st.session_state.rain_series
+water_series = st.session_state.water_series
+risk_series = st.session_state.risk_series
 
-    for _, r in sat.iterrows():
+if len(rain_series) == 0:
+    rain_series = [0]
+    water_series = [0]
+    risk_series = [0]
 
-        color = "blue" if r["ndwi"] > 0.3 else "gray"
+col3, col4 = st.columns(2)
 
-        folium.CircleMarker(
-            location=[r["latitude"], r["longitude"]],
-            radius=5,
-            color=color,
-            fill=True,
-            popup=f"NDWI: {r['ndwi']:.2f}"
-        ).add_to(m)
+with col3:
+    fig1 = go.Figure()
 
-    st_folium(m, width=900, height=500)
+    fig1.add_trace(go.Scatter(y=rain_series, name="Rainfall"))
+    fig1.add_trace(go.Scatter(y=water_series, name="Water Level"))
+
+    fig1.update_layout(title="🌧️ Sensor Trends")
+
+    st.plotly_chart(fig1, use_container_width=True)
+
+with col4:
+    fig2 = go.Figure()
+
+    fig2.add_trace(go.Scatter(y=risk_series, name="Flood Risk"))
+
+    fig2.update_layout(title="🚨 Risk Trend Over Time")
+
+    st.plotly_chart(fig2, use_container_width=True)
 
 # =====================================================
-# TAB 6 - RAINFALL TREND
+# LIVE SIMULATION
 # =====================================================
-with tab6:
-    st.subheader("📊 Rainfall Time Series")
 
-    ts = df.sample(200).copy()
-    ts["date"] = pd.date_range("2020-01-01", periods=200)
+st.markdown("---")
 
-    fig, ax = plt.subplots()
-    ax.plot(ts["date"], ts["rainfall_7d_mm"])
+if st.button("🌊 Start Live IoT Simulation"):
 
-    ax.set_title("Rainfall Trend")
-    plt.xticks(rotation=45)
+    placeholder = st.empty()
 
-    st.pyplot(fig)
+    for i in range(30):
+
+        r = np.random.rand()
+        w = np.random.rand()
+        d = np.random.rand()
+        p = np.random.rand()
+
+        data = pd.DataFrame([[r, w, d, p]], columns=features)
+        scaled = scaler.transform(data)
+
+        pred = model.predict(scaled)[0]
+        prob = max(model.predict_proba(scaled)[0])
+
+        # SAVE TO SESSION STATE (CRITICAL FIX)
+        st.session_state.rain_series.append(r)
+        st.session_state.water_series.append(w)
+        st.session_state.risk_series.append(prob)
+
+        placeholder.write(f"""
+        ### 🔴 Live IoT Stream {i+1}
+
+        - 🌧 Rainfall: {r:.2f}
+        - 🌊 Water Level: {w:.2f}
+        - 🚧 Drainage: {d:.2f}
+        - 👥 Population: {p:.2f}
+
+        ### 🚨 Prediction: {labels[pred]}
+        ### 📊 Risk Score: {prob:.2f}
+        """)
+
+        time.sleep(0.6)
